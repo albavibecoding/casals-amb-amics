@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
-import type { Camp, FiltersState } from './types/camp';
-import { camps as allCamps, childProfile as defaultChildProfile } from './data/camps';
+import { useState, useMemo, useEffect } from 'react';
+import type { Camp, FiltersState, ChildProfile } from './types/camp';
+import { camps as mockCamps, childProfile as mockChildProfile } from './data/camps';
+import { fetchCamps, fetchChildProfile, isSupabaseReady } from './utils/db';
 import Header from './components/Header';
 import SearchBar from './components/SearchBar';
 import Filters from './components/Filters';
@@ -66,6 +67,9 @@ function matchesCamp(camp: Camp, filters: FiltersState): boolean {
 }
 
 export default function App() {
+  const [allCamps, setAllCamps] = useState<Camp[]>(mockCamps);
+  const [childProfile, setChildProfile] = useState<ChildProfile>(mockChildProfile);
+  const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<FiltersState>(defaultFilters);
   const [showMap, setShowMap] = useState(false);
   const [showRanking, setShowRanking] = useState(false);
@@ -73,17 +77,36 @@ export default function App() {
   const [compareIds, setCompareIds] = useState<string[]>([]);
   const [calendarIds, setCalendarIds] = useState<string[]>([]);
 
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [campsData, profileData] = await Promise.all([
+          fetchCamps(),
+          fetchChildProfile(),
+        ]);
+        setAllCamps(campsData);
+        if (profileData) setChildProfile(profileData);
+      } catch {
+        setAllCamps(mockCamps);
+        setChildProfile(mockChildProfile);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, []);
+
   const filteredCamps = useMemo(() => {
     return allCamps.filter(c => matchesCamp(c, filters));
-  }, [filters]);
+  }, [allCamps, filters]);
 
   const compareCamps = useMemo(() => {
     return compareIds.map(id => allCamps.find(c => c.id === id)!).filter(Boolean);
-  }, [compareIds]);
+  }, [compareIds, allCamps]);
 
   const calendarCamps = useMemo(() => {
     return calendarIds.map(id => allCamps.find(c => c.id === id)!).filter(Boolean);
-  }, [calendarIds]);
+  }, [calendarIds, allCamps]);
 
   const avgCost = useMemo(() => {
     if (filteredCamps.length === 0) return 0;
@@ -115,6 +138,17 @@ export default function App() {
     setShowCalendar(true);
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-sky-200 border-t-sky-500 rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-slate-500 font-medium">Carregant casals...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50">
       <Header
@@ -127,6 +161,13 @@ export default function App() {
       />
 
       <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+        {isSupabaseReady && (
+          <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-2xl text-sm font-medium border border-emerald-100">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            Connectat a Supabase
+          </div>
+        )}
+
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <StatCard label="Casals trobats" value={filteredCamps.length} icon="🏕️" />
           <StatCard label="Cost mitjà" value={`${avgCost}€`} icon="💰" />
@@ -148,7 +189,7 @@ export default function App() {
           <div className="lg:col-span-3 space-y-6">
             <CampList
               camps={filteredCamps}
-              childProfile={defaultChildProfile}
+              childProfile={childProfile}
               compareIds={compareIds}
               onToggleCompare={handleToggleCompare}
               onAddToCalendar={handleAddToCalendar}
@@ -160,13 +201,13 @@ export default function App() {
             {showRanking && <RankingSection camps={filteredCamps} />}
             {showCalendar && <CampCalendar calendars={calendarCamps} />}
 
-            <ChildProfileSection profile={defaultChildProfile} camps={filteredCamps} />
+            <ChildProfileSection profile={childProfile} camps={filteredCamps} />
 
             <FriendsSection camps={filteredCamps} />
 
             <ComparePanel
               camps={compareCamps}
-              childProfile={defaultChildProfile}
+              childProfile={childProfile}
               onRemove={camp => handleToggleCompare(camp)}
             />
           </aside>
